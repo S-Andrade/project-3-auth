@@ -1,11 +1,18 @@
 import asyncio
 import json
-import base64
 import argparse
 import coloredlogs, logging
-import re
-import os
 from aio_tcpserver import tcp_server
+import os
+from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
+from cryptography.hazmat.primitives import hashes
+from cryptography.hazmat.backends import default_backend
+import base64
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric import padding
+from cryptography.hazmat.primitives.asymmetric import rsa
+from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+from salsa20 import XSalsa20_xor
 
 logger = logging.getLogger('root')
 
@@ -13,9 +20,6 @@ STATE_CONNECT = 0
 STATE_OPEN = 1
 STATE_DATA = 2
 STATE_CLOSE= 3
-
-#GLOBAL
-storage_dir = 'files'
 
 class ClientHandler(asyncio.Protocol):
 	def __init__(self, signal):
@@ -27,9 +31,18 @@ class ClientHandler(asyncio.Protocol):
 		self.file = None
 		self.file_name = None
 		self.file_path = None
-		self.storage_dir = storage_dir
+		self.storage_dir = 'serverFiles'
 		self.buffer = ''
 		self.peername = ''
+		self.algorithms = []
+		self.private_key = ''
+		self.public_key = ''
+		self.pem_public_key = ''
+		self.encriptkey = ''
+		self.key=''
+		self.iv = ''
+		self.file_name_decrypt = 'serverFiles/fileBonito.txt'
+
 
 	def connection_made(self, transport) -> None:
 		"""
@@ -90,13 +103,38 @@ class ClientHandler(asyncio.Protocol):
 			return
 
 		mtype = message.get('type', "").upper()
-
-		if mtype == 'OPEN':
+		if mtype == 'HELLO':
+			self.algorithms = message.get('data').split('_')
+			if self.algorithms:
+				self.keyPair()
+				logger.info("Send public Key")
+				self._send({'type': 'PUBLIC_KEY', 'data': base64.b64encode(self.pem_public_key).decode()})
+				ret = True
+			else:
+				ret = False
+		elif mtype == 'SECURE':
+			self.encriptkey = base64.b64decode(message.get('data'))
+			if self.encriptkey != '':
+				logger.info("Key")
+				self.getKey()
+				ret = True
+			else:
+				ret = False
+		elif mtype == 'SECURE_IV':
+			logger.info("iv")
+			self.iv=base64.b64decode(message.get('data'))
+			if self.iv != '':
+				ret = True
+			else:
+				ret= False
+		elif mtype == 'OPEN':
 			ret = self.process_open(message)
 		elif mtype == 'DATA':
 			ret = self.process_data(message)
 		elif mtype == 'CLOSE':
 			ret = self.process_close(message)
+			logger.info("Decrypt file")
+			self.decryptFile()
 		else:
 			logger.warning("Invalid message type: {}".format(message['type']))
 			ret = False
@@ -135,11 +173,13 @@ class ClientHandler(asyncio.Protocol):
 			return False
 
 		# Only chars and letters in the filename
-		file_name = re.sub(r'[^\w\.]', '', message['file_name'])
+		fn= message['file_name'].split("/")
+		file_name = fn[1]
+		#file_name = re.sub(r'[^\w\.]', '', message['file_name'])
 		file_path = os.path.join(self.storage_dir, file_name)
-		if not os.path.exists("files"):
+		if not os.path.exists("serverFiles"):
 			try:
-				os.mkdir("files")
+				os.mkdir("serverFiles")
 			except:
 				logger.exception("Unable to create storage directory")
 				return False
@@ -151,8 +191,7 @@ class ClientHandler(asyncio.Protocol):
 			logger.exception("Unable to open file")
 			return False
 
-		self._send({'type': 'OK'})
-
+		#self._send({'type': 'OK'})
 		self.file_name = file_name
 		self.file_path = file_path
 		self.state = STATE_OPEN
@@ -221,6 +260,22 @@ class ClientHandler(asyncio.Protocol):
 
 		return True
 
+	def keyPair(self):
+		# gera a private key
+		logger.info("Private Key")
+		self.private_key = rsa.generate_private_key(
+			public_exponent=65537,
+			key_size=4096,
+			backend=default_backend()
+		)
+		logger.info("Public Key")
+		# gera a public key
+		self.public_key = self.private_key.public_key()
+		# guarda a public key num pem
+		self.pem_public_key = self.public_key.public_bytes(
+			encoding=serialization.Encoding.PEM,
+			format=serialization.PublicFormat.SubjectPublicKeyInfo
+		)
 
 	def _send(self, message: str) -> None:
 		"""
@@ -232,6 +287,58 @@ class ClientHandler(asyncio.Protocol):
 
 		message_b = (json.dumps(message) + '\r\n').encode()
 		self.transport.write(message_b)
+
+	def getKey(self):
+		if 'SHA256' in self.algorithms:
+			self.key = self.private_key.decrypt(
+				self.encriptkey,
+				padding.OAEP(
+					mgf=padding.MGF1(algorithm=hashes.SHA256()),
+					algorithm=hashes.SHA256(),
+					label=None
+				)
+			)
+		elif 'SHA512' in self.algorithms:
+			self.key = self.private_key.decrypt(
+				self.encriptkey,
+				padding.OAEP(mgf=padding.MGF1(
+					algorithm=hashes.SHA512()),
+					algorithm=hashes.SHA512(),
+					label=None
+				)
+			)
+		else:
+			logger.warning("Invalid algorithm")
+
+	def decryptFile(self):
+		with open(self.file_path, 'rb') as file:
+			cryptogram = file.read()
+		if "AES" in  self.algorithms:
+			algorithm_name = algorithms.AES(self.key)
+			if "CBC" in self.algorithms:
+				cipher = Cipher(algorithm_name, modes.CBC(self.iv), backend=default_backend())
+				decryptor = cipher.decryptor()
+				end = decryptor.update(cryptogram) + decryptor.finalize()
+				p = end[-1]
+				if len(end) < p:
+					raise (Exception("Invalid padding. Larger than text"))
+				if not 0 < p <= algorithm_name.block_size / 8:
+					raise (Exception("Invalid padding. Larger than block size"))
+				pa = -1 * p
+				end = end[:pa]
+			elif "GCM" in self.algorithms:
+				aad = str.encode(''.join(self.algorithms))
+				aesgcm = AESGCM(self.key)
+				end=aesgcm.decrypt(self.iv, cryptogram, aad)
+			else:
+				raise (Exception("Invalid mode"))
+
+		elif "Salsa20" in self.algorithms:
+			end = XSalsa20_xor(cryptogram,self.iv,self.key)
+		else:
+			raise (Exception("Invalid algorithm"))
+		with open(self.file_name_decrypt,'w') as file:
+			file.write(end.decode())
 
 def main():
 	global storage_dir
@@ -246,7 +353,7 @@ def main():
 
 	parser.add_argument('-d', type=str, required=False, dest='storage_dir',
 						default='files',
-						help='Where to store files (default=./files)')
+						help='Where to store files (default=./serverFiles)')
 
 	args = parser.parse_args()
 	storage_dir = os.path.abspath(args.storage_dir)
