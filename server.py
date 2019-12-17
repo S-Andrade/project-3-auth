@@ -114,18 +114,18 @@ class ClientHandler(asyncio.Protocol):
                     self._send({'type','CERT_SERVER', 'data', self.server_cert })
                     self.server_signature = base64.b64encode(self.getSignature()).decode()
                     self._send({'type','SIGN_SERVER', 'data', self.server_signature })
-                elif mtype == 'SERVER_OK':
+                if mtype == 'SERVER_OK':
                     self.client_text = message.get('data')
-                elif mtype == 'SERVER_OK':
+                if mtype == 'SERVER_OK':
                     self.client_text = base64.b64decode(message.get('data')).encode()
-                elif mtype == 'CERT_CLIENT':
+                if mtype == 'CERT_CLIENT':
                     self.client_cert = base64.b64decode(message.get('data')).encode()
-                elif mtype == 'SIGN_CLIENT':
+                if mtype == 'SIGN_CLIENT':
                     self.sign_client = message.get('data')
                     if not self.verifyClient():
                         return
                     self._send({'type','START_LOGIN'})
-                elif mtype == 'USER':
+                if mtype == 'USER':
                     uname = message.get('uname')
                     A = base64.b64decode(message.get('A')).encode()
                     password = self.getPassword(uname)
@@ -134,13 +134,12 @@ class ClientHandler(asyncio.Protocol):
                     s,B = self.svr.get_challenge()
                     self._send({'type','s', 'data', base64.b64encode(s).decode() })
                     self._send({'type','B', 'data', base64.b64encode(B).decode() })
-                elif mtype == 'M':
+                if mtype == 'M':
                     M = base64.b64decode(message.get('data')).encode()
                     HAMK = self.svr.verify_session(M)
                     if HAMK:
-                        self._send({'type': 'OKOK'}
-                
-                elif mtype == 'HELLO':
+                        self._send({'type': 'OKOK'})
+                if mtype == 'HELLO':
                     self.algorithms = message.get('data').split('_')
                     
                     if self.algorithms:
@@ -151,44 +150,43 @@ class ClientHandler(asyncio.Protocol):
                     else:
                         ret = False
                 
-                elif mtype == 'SECURE':
-		    self.encriptkey = base64.b64decode(message.get('data'))
-		    if self.encriptkey != '':
-		        logger.info("Key")
-			self.getKey()
-			ret = True
-		    else:
-			ret = False
-                elif mtype == 'SECURE_IV':
-		    logger.info("iv")
-		    self.iv=base64.b64decode(message.get('data'))
-		    if self.iv != '':
-			ret = True
-		    else:
-			ret= False
-	        elif mtype == 'OPEN':
-		    ret = self.process_open(message)
-	        elif mtype == 'DATA':
-		    ret = self.process_data(message)
-	        elif mtype == 'CLOSE':
-		    ret = self.process_close(message)
-		    logger.info("Decrypt file")
-		    self.decryptFile()
-	        else:
-		    logger.warning("Invalid message type: {}".format(message['type']))
-		    ret = False
-
-	        if not ret:
-		    try:
-			self._send({'type': 'ERROR', 'message': 'See server'})
-		    except:
-		        pass # Silently ignore
-	            logger.info("Closing transport")
-        	    if self.file is not None:
-			self.file.close()
-			self.file = None
-		    self.state = STATE_CLOSE
-		    self.transport.close()
+                if mtype == 'SECURE':
+                    self.encriptkey = base64.b64decode(message.get('data'))
+                    if self.encriptkey != '':
+                        logger.info("Key")
+                        self.getKey()
+                        ret = True
+                    else:
+                        ret = False
+                if mtype == 'SECURE_IV':
+                    logger.info("iv")
+                    self.iv=base64.b64decode(message.get('data'))
+                    if self.iv != '':
+                        ret = True
+                    else:
+                        ret= False
+                if mtype == 'OPEN':
+                    ret = self.process_open(message)
+                if mtype == 'DATA':
+                    ret = self.process_data(message)
+                if mtype == 'CLOSE':
+                    ret = self.process_close(message)
+                    logger.info("Decrypt file")
+                    self.decryptFile()
+                else:
+                    logger.warning("Invalid message type: {}".format(message['type']))
+                    ret = False
+                if not ret:
+                    try:
+                        self._send({'type': 'ERROR', 'message': 'See server'})
+                    except:
+                        pass # Silently ignore
+                    logger.info("Closing transport")
+                    if self.file is not None:
+                        self.file.close()
+                        self.file = None
+                    self.state = STATE_CLOSE
+                    self.transport.close()
 
 
 	def process_open(self, message: str) -> bool:
@@ -347,94 +345,94 @@ class ClientHandler(asyncio.Protocol):
 		else:
 			logger.warning("Invalid algorithm")
 
-	def decryptFile(self):
-		with open(self.file_path, 'rb') as file:
-			cryptogram = file.read()
-		if "AES" in  self.algorithms:
-			algorithm_name = algorithms.AES(self.key)
-			if "CBC" in self.algorithms:
-				cipher = Cipher(algorithm_name, modes.CBC(self.iv), backend=default_backend())
-				decryptor = cipher.decryptor()
-				end = decryptor.update(cryptogram) + decryptor.finalize()
-				p = end[-1]
-				if len(end) < p:
-					raise (Exception("Invalid padding. Larger than text"))
-				if not 0 < p <= algorithm_name.block_size / 8:
-					raise (Exception("Invalid padding. Larger than block size"))
-				pa = -1 * p
-				end = end[:pa]
-			elif "GCM" in self.algorithms:
-				aad = str.encode(''.join(self.algorithms))
-				aesgcm = AESGCM(self.key)
-				end=aesgcm.decrypt(self.iv, cryptogram, aad)
-			else:
-				raise (Exception("Invalid mode"))
+        
+        def decryptFile(self):
+                with open(self.file_path, 'rb') as file:
+			    cryptogram = file.read()
+	        if "AES" in  self.algorithms:
+		    algorithm_name = algorithms.AES(self.key)
+                    if "CBC" in self.algorithms:
+                        cipher = Cipher(algorithm_name, modes.CBC(self.iv), backend=default_backend())
+		        decryptor = cipher.decryptor()
+		        end = decryptor.update(cryptogram) + decryptor.finalize()
+		        p = end[-1]
+		        if len(end) < p:
+		            raise (Exception("Invalid padding. Larger than text"))
+		        if not 0 < p <= algorithm_name.block_size / 8:
+			    raise (Exception("Invalid padding. Larger than block size"))
+			    pa = -1 * p
+			    end = end[:pa]
+		    elif "GCM" in self.algorithms:
+			aad = str.encode(''.join(self.algorithms))
+			aesgcm = AESGCM(self.key)
+			end=aesgcm.decrypt(self.iv, cryptogram, aad)
+		    else:
+			raise (Exception("Invalid mode"))
 
-		elif "Salsa20" in self.algorithms:
-			end = XSalsa20_xor(cryptogram,self.iv,self.key)
-		else:
-			raise (Exception("Invalid algorithm"))
-		with open(self.file_name_decrypt,'w') as file:
-			file.write(end.decode())
-
-    def getCert(self):
-        self.server_privarte_key_cert = rsa.generate_private_key(public_exponent=65537,key_size=2048,backend=default_backend())
-
-        subject = issuer = x509.Name([
-            x509.NameAttribute(NameOID.COUNTRY_NAME, u"US"),
-            x509.NameAttribute(NameOID.STATE_OR_PROVINCE_NAME, u"California"),
-            x509.NameAttribute(NameOID.LOCALITY_NAME, u"San Francisco"),
-            x509.NameAttribute(NameOID.ORGANIZATION_NAME, u"My Company"),
-            x509.NameAttribute(NameOID.COMMON_NAME, u"mysite.com")
-            ])
-
-        self.server_cert = x509.CertificateBuilder().subject_name(
-                subject
-                ).issuer_name(
-                        issuer
-                        ).public_key(
-                                self.server_privarte_key_cert.public_key()
-                                ).serial_number(x509.random_serial_number()
-                                        ).not_valid_before(
-                                                datetime.datetime.utcnow()
-                                                ).not_valid_after(
-                                                        datetime.datetime.utcnow() + datetime.timedelta(days=10)
-                                                        ).add_extension(
-                                                                x509.SubjectAlternativeName([x509.DNSName(u"localhost")]),critical=False,
-                                                                ).sign(self.server_privarte_key_cert, hashes.SHA256(), default_backend())
-
-        return self.server_cert
-
-    
-    def getSignature(self):
-        signature = self.server_private_key_cert.sign(
-                self.text_to_sign,
-                padding.PSS(
-                mgf=padding.MGF1(hashes.SHA256()),
-                salt_length=padding.PSS.MAX_LENGTH
-                ),
-                hashes.SHA256()
-                )
-        return signature
+	        elif "Salsa20" in self.algorithms:
+	            end = XSalsa20_xor(cryptogram,self.iv,self.key)
+	        else:
+	            raise (Exception("Invalid algorithm"))
+	        with open(self.file_name_decrypt,'w') as file:
+	            file.write(end.decode())
 
 
+       def getCert(self):
+            self.server_privarte_key_cert = rsa.generate_private_key(public_exponent=65537,key_size=2048,backend=default_backend())
+            subject = issuer = x509.Name([
+                x509.NameAttribute(NameOID.COUNTRY_NAME, u"US"),
+                x509.NameAttribute(NameOID.STATE_OR_PROVINCE_NAME, u"California"),
+                x509.NameAttribute(NameOID.LOCALITY_NAME, u"San Francisco"),
+                x509.NameAttribute(NameOID.ORGANIZATION_NAME, u"My Company"),
+                x509.NameAttribute(NameOID.COMMON_NAME, u"mysite.com")
+                ])
+            
+            self.server_cert = x509.CertificateBuilder().subject_name(
+                    subject
+                    ).issuer_name(
+                            issuer
+                            ).public_key(
+                                    self.server_privarte_key_cert.public_key()
+                                    ).serial_number(x509.random_serial_number()
+                                            ).not_valid_before(
+                                                    datetime.datetime.utcnow()
+                                                    ).not_valid_after(
+                                                            datetime.datetime.utcnow() + datetime.timedelta(days=10)
+                                                            ).add_extension(
+                                                                    x509.SubjectAlternativeName([x509.DNSName(u"localhost")]),critical=False,
+                                                                    ).sign(self.server_privarte_key_cert, hashes.SHA256(), default_backend())
+            return self.server_cert
 
-	def verifyClient(self):
-		public_key = self.client_cert.public_key()
-		v = public_key.verify(self.sign_client,self.clint_text , padding.PKCS1v15(), hashes.SHA1())
-		if v == None:
-			return True
-		else:
-			return False
+       def getSignature(self):
+            signature = self.server_private_key_cert.sign(
+                    self.text_to_sign,
+                    padding.PSS(
+                        mgf=padding.MGF1(hashes.SHA256()),
+                        salt_length=padding.PSS.MAX_LENGTH
+                        ),
+                    hashes.SHA256()
+                    )
+            return signature
 
-	def getPassword(self,uname):
-		filepath = 'login.txt'
-		with open(filepath) as fp:
-			for line in fp:
-				l = line.split()
-				if l[0] == uname:
-					return l[1]
-		return None
+
+       def verifyClient(self):
+            public_key = self.client_cert.public_key()
+            v = public_key.verify(self.sign_client,self.clint_text , padding.PKCS1v15(), hashes.SHA1())
+            if v == None:
+                return True
+            else:
+                return False
+
+       def getPassword(self,uname):
+            filepath = 'login.txt'
+            with open(filepath) as fp:
+                for line in fp:
+                    l = line.split()
+                    if l[0] == uname:
+                        return l[1]
+            return None
+
+
 def main():
 	global storage_dir
 
