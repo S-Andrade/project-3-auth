@@ -46,6 +46,9 @@ class ClientProtocol(asyncio.Protocol):
         self.encryptkey = ''
         self.file_name_encrypted = 'clientFiles/file_encrypted.txt'
         self.iv = ''
+        self.cert_server=''
+        self.sign_server=''
+        self.text_server = ''
 
     def connection_made(self, transport) -> None:
         """
@@ -57,11 +60,13 @@ class ClientProtocol(asyncio.Protocol):
         self.transport = transport
 
         logger.debug('Connected to Server')
-        input = 'Salsa20_SHA256'
-        self.algorithms = input.split('_')
-        message = {'type': 'HELLO', 'data': input }
-        logger.info("Hello")
-        self._send(message)
+        self._send({'type': 'HEY', 'data': b"prova que és o servidor"})
+        
+        #input = 'Salsa20_SHA256'
+        #self.algorithms = input.split('_')
+        #message = {'type': 'HELLO', 'data': input }
+        #logger.info("Hello")
+        #self._send(message)
 
         #message = {'type': 'OPEN', 'file_name': self.file_name}
         #self._send(message)
@@ -114,6 +119,11 @@ class ClientProtocol(asyncio.Protocol):
             return
 
         mtype = message.get('type', None)
+        if mtype == 'CERT_SERVER':
+            self.cert_server = mesage.get('data')
+         if mtype == 'SIGN_SERVER':
+            self.sign_server = mesage.get('data')
+            self.verifyServer()
         if mtype == 'PUBLIC_KEY':
             pem_public_key = base64.b64decode(message.get('data'))
             self.server_public_key = serialization.load_pem_public_key(
@@ -263,6 +273,13 @@ class ClientProtocol(asyncio.Protocol):
         with open(self.file_name_encrypted, 'wb') as file:
             file.write(end)
 
+    def verifyServer():
+        public_key = self.cert_server.public_key()
+        v = public_key.verify(self.sign_server,self.text_server,padding.PSS(mgf=padding.MGF1(hashes.SHA256()),salt_length=padding.PSS.MAX_LENGTH),hashes.SHA256())
+        if v == None:
+            return True
+        else:
+            return False
 def main():
     parser = argparse.ArgumentParser(description='Sends files to servers.')
     parser.add_argument('-v', action='count', dest='verbose',

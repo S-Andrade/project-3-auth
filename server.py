@@ -13,6 +13,11 @@ from cryptography.hazmat.primitives.asymmetric import padding
 from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from salsa20 import XSalsa20_xor
+from cryptography import x509
+from cryptography.x509.oid import NameOID
+import datetime
+import PyKCS11
+
 
 logger = logging.getLogger('root')
 
@@ -42,7 +47,10 @@ class ClientHandler(asyncio.Protocol):
 		self.key=''
 		self.iv = ''
 		self.file_name_decrypt = 'serverFiles/fileBonito.txt'
-
+                self.server_cert = ''
+                self.server_signature = ''
+                self.server_privarte_key_cert = ''
+                self.text_to_sign = ''
 
 	def connection_made(self, transport) -> None:
 		"""
@@ -103,7 +111,14 @@ class ClientHandler(asyncio.Protocol):
 			return
 
 		mtype = message.get('type', "").upper()
-		if mtype == 'HELLO':
+                if mtype == 'HEY':
+                    self.text_to_sign = massage.get('data')
+                    self.server_cert = self.getCert()
+                    print(self.server_cert)
+                    self._send({'type','CERT_SERVER', 'data', self.server_cert })
+                    self.server_signature = getSignature()
+                    self._send({'type','SIGN_SERVER', 'data', self.server_signature })
+                elif mtype == 'HELLO':
 			self.algorithms = message.get('data').split('_')
 			if self.algorithms:
 				self.keyPair()
@@ -339,6 +354,54 @@ class ClientHandler(asyncio.Protocol):
 			raise (Exception("Invalid algorithm"))
 		with open(self.file_name_decrypt,'w') as file:
 			file.write(end.decode())
+
+    def getCert()
+        self.server_privarte_key_cert = rsa.generate_private_key(public_exponent=65537,key_size=2048,backend=default_backend())
+
+        subject = issuer = x509.Name([
+            x509.NameAttribute(NameOID.COUNTRY_NAME, u"US"),
+            x509.NameAttribute(NameOID.STATE_OR_PROVINCE_NAME, u"California"),
+            x509.NameAttribute(NameOID.LOCALITY_NAME, u"San Francisco"),
+            x509.NameAttribute(NameOID.ORGANIZATION_NAME, u"My Company"),
+            x509.NameAttribute(NameOID.COMMON_NAME, u"mysite.com")
+            ])
+
+        self.server_cert = x509.CertificateBuilder().subject_name(
+                subject
+                ).issuer_name(
+                        issuer
+                        ).public_key(
+                                key.public_key()
+                                ).serial_number(x509.random_serial_number()
+                                        ).not_valid_before(
+                                                datetime.datetime.utcnow()
+                                                ).not_valid_after(
+                                                        datetime.datetime.utcnow() + datetime.timedelta(days=10)
+                                                        ).add_extension(
+                                                                x509.SubjectAlternativeName([x509.DNSName(u"localhost")]),critical=False,
+                                                                ).sign(key, hashes.SHA256(), default_backend())
+
+        return cert
+
+    
+    def getSignature():
+        message = b"A message I want to sign"
+        signature = self.server_private_key_cert.sign(
+                self.text_to_sign,
+                padding.PSS(
+                mgf=padding.MGF1(hashes.SHA256()),
+                salt_length=padding.PSS.MAX_LENGTH
+                ),
+                hashes.SHA256()
+                )
+        return signature
+
+
+
+
+
+
+
 
 def main():
 	global storage_dir
