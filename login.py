@@ -24,10 +24,12 @@ M = usr.process_challenge(s, B)
 HAMK = svr.verify_session(M)
 print(HAMK)
 
-
+#client
+t = usr.verify_session(HAMK)
+print(t)
 
 print(svr.authenticated())
-
+print(usr.authenticated())
 
 def getPassword(uname):
     filepath = 'login.txt'
