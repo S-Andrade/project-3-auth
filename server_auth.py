@@ -6,7 +6,8 @@ from cryptography.x509.oid import NameOID
 from cryptography.hazmat.primitives import hashes
 import datetime
 import PyKCS11
-
+from cryptography.hazmat.primitives import hashes
+from cryptography.hazmat.primitives.asymmetric import padding
 
 #criar certificado do servidor
 key = rsa.generate_private_key(public_exponent=65537,key_size=2048,backend=default_backend())
@@ -41,4 +42,20 @@ print(cert)
 
 
 #assinar um texto com o certificado do servidor
+message = b"A message I want to sign"
+signature = key.sign(message,
+        padding.PSS(
+            mgf=padding.MGF1(hashes.SHA256()),
+            salt_length=padding.PSS.MAX_LENGTH
+            ),
+        hashes.SHA256()
+        )
+
+print(signature)
+
+
+#cliente verifica
+
+public_key = cert.public_key()
+public_key.verify(signature,message,padding.PSS(mgf=padding.MGF1(hashes.SHA256()),salt_length=padding.PSS.MAX_LENGTH),hashes.SHA256())
 
