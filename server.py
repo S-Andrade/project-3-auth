@@ -348,7 +348,7 @@ class ClientHandler(asyncio.Protocol):
         
         def decryptFile(self):
                 with open(self.file_path, 'rb') as file:
-			    cryptogram = file.read()
+                    cryptogram = file.read()
 	        if "AES" in  self.algorithms:
 		    algorithm_name = algorithms.AES(self.key)
                     if "CBC" in self.algorithms:
