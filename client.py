@@ -2,16 +2,25 @@ import asyncio
 import json
 import argparse
 import coloredlogs, logging
+from aio_tcpserver import tcp_server
 import os
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 from cryptography.hazmat.primitives import hashes
-from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 from cryptography.hazmat.backends import default_backend
 import base64
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import padding
+from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from salsa20 import XSalsa20_xor
+from cryptography import x509
+from cryptography.x509.oid import NameOID
+import datetime
+import PyKCS11
+from datetime import datetime
+import sys
+import binascii
+import srp
 
 
 
@@ -66,7 +75,7 @@ class ClientProtocol(asyncio.Protocol):
         self.transport = transport
 
         logger.debug('Connected to Server')
-        self.text_server = b"prova que és o servidor"
+        self.text_server = 'prova que és o servidor'
         self._send({'type': 'HEY', 'data': self.text_server})
         
 
@@ -128,16 +137,18 @@ class ClientProtocol(asyncio.Protocol):
             self.sign_server = base64.b64decode(message.get('data')).encode()
             if not self.verifyServer():
                 return
-            self.text_to_sign = b"eu sou quem digo ser"
+            self.text_to_sign = 'eu sou quem digo ser'
             self._send({'type': 'SERVER_OK', 'data': self.text_to_sign})
             self.getCC()
-            self._send({'type': 'CERT_CLIENT', 'data': base64.b16encode(self.cert_client).decode()})
-            self._send({'type': 'SIGN_CLIENT', 'data': base64.b16encode(self.sign_client).decode()})
+            c = base64.b16encode(self.cert_client).decode()
+            self._send({'type': 'CERT_CLIENT', 'data': c})
+            s = base64.b16encode(self.sign_client).decode()
+            self._send({'type': 'SIGN_CLIENT', 'data': s})
 
         if mtype == 'START_LOGIN':
             self.usr = srp.User('testuser', 'testpassword')
             uname, A = self.usr.start_authentication()
-            self._send({'type': 'USER', 'uname' : uname, base64.b16encode(A).decode()})
+            self._send({'type': 'USER', 'uname' : uname,'A':base64.b16encode(A).decode()})
 
         if mtype =='s':
             self.s = base64.b64decode(message.get('data')).encode()

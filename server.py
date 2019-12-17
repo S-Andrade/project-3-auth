@@ -2,7 +2,6 @@ import asyncio
 import json
 import argparse
 import coloredlogs, logging
-import self as self
 from aio_tcpserver import tcp_server
 import os
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
@@ -18,6 +17,10 @@ from cryptography import x509
 from cryptography.x509.oid import NameOID
 import datetime
 import PyKCS11
+from datetime import datetime
+import sys
+import binascii
+import srp
 
 
 logger = logging.getLogger('root')
@@ -29,33 +32,30 @@ STATE_CLOSE= 3
 
 class ClientHandler(asyncio.Protocol):
 	def __init__(self, signal):
-		"""
-		Default constructor
-		"""
-		self.signal = signal
-		self.state = 0
-		self.file = None
-		self.file_name = None
-		self.file_path = None
-		self.storage_dir = 'serverFiles'
-		self.buffer = ''
-		self.peername = ''
-		self.algorithms = []
-		self.private_key = ''
-		self.public_key = ''
-		self.pem_public_key = ''
-		self.encriptkey = ''
-		self.key=''
-		self.iv = ''
-		self.file_name_decrypt = 'serverFiles/fileBonito.txt'
-        self.server_cert = ''
-        self.server_signature = ''
-        self.server_privarte_key_cert = ''
-        self.text_to_sign = ''
-		self.client_text = ''
-		self.client_cert = ''
-		self.sign_client = ''
-		self.srv =''
+            self.signal = signal
+            self.state = 0
+            self.file = None
+            self.file_name = None
+            self.file_path = None
+            self.storage_dir = 'serverFiles'
+            self.buffer = ''
+            self.peername = ''
+            self.algorithms = []
+            self.private_key = ''
+            self.public_key = ''
+            self.pem_public_key = ''
+            self.encriptkey = ''
+            self.key=''
+            self.iv = ''
+            self.file_name_decrypt = 'serverFiles/fileBonito.txt'
+            self.server_cert = ''
+            self.server_signature = ''
+            self.server_privarte_key_cert = ''
+            self.text_to_sign = ''
+            self.client_text = ''
+            self.client_cert = ''
+            self.sign_client = ''
+            self.srv =''
 
 	def connection_made(self, transport) -> None:
 		"""
@@ -100,105 +100,95 @@ class ClientHandler(asyncio.Protocol):
 
 
 	def on_frame(self, frame: str) -> None:
-		"""
-		Called when a frame (JSON Object) is extracted
-
-		:param frame: The JSON object to process
-		:return:
-		"""
-		#logger.debug("Frame: {}".format(frame))
-
-		try:
-			message = json.loads(frame)
-		except:
-			logger.exception("Could not decode JSON message: {}".format(frame))
-			self.transport.close()
-			return
-
-		mtype = message.get('type', "").upper()
-        if mtype == 'HEY':
-                self.text_to_sign = message.get('data')
-                self.server_cert = base64.b16encode(self.getCert()).decode()
-                print(self.server_cert)
-                self._send({'type','CERT_SERVER', 'data', self.server_cert })
-                self.server_signature = base64.b64encode(self.getSignature()).decode()
-                self._send({'type','SIGN_SERVER', 'data', self.server_signature })
-		elif mtype == 'SERVER_OK'
-				self.client_text = message.get('data')
-		elif mtype == 'SERVER_OK':
-				self.client_text = base64.b64decode(message.get('data')).encode()
-		elif mtype == 'CERT_CLIENT':
-				self.client_cert = base64.b64decode(message.get('data')).encode()
-		elif mtype == 'SIGN_CLIENT':
-				self.sign_client = message.get('data')
-				if not self.verifyClient():
-					return
-				self._send({'type','START_LOGIN'})
-		elif mtype == 'USER':
-			uname = message.get('uname')
-			A = base64.b64decode(message.get('A')).encode()
-			password = self.getPassword(uname)
-			salt, vkey = srp.create_salted_verification_key( uname, password )
-			self.svr = srp.Verifier( uname, salt, vkey, A)
-			s,B = self.svr.get_challenge()
-			self._send({'type','s', 'data', base64.b64encode(s).decode() })
-			self._send({'type','B', 'data', base64.b64encode(B).decode() })
-		elif mtype == 'M'
-			M = base64.b64decode(message.get('data')).encode()
-			HAMK = self.svr.verify_session(M)
-			if HAMK:
-				self._send({'type': 'OKOK'})
-
-        elif mtype == 'HELLO':
-			self.algorithms = message.get('data').split('_')
-			if self.algorithms:
-				self.keyPair()
-				logger.info("Send public Key")
-				self._send({'type': 'PUBLIC_KEY', 'data': base64.b64encode(self.pem_public_key).decode()})
-				ret = True
-			else:
-				ret = False
-
-		elif mtype == 'SECURE':
-			self.encriptkey = base64.b64decode(message.get('data'))
-			if self.encriptkey != '':
-				logger.info("Key")
-				self.getKey()
-				ret = True
-			else:
-				ret = False
-		elif mtype == 'SECURE_IV':
-			logger.info("iv")
-			self.iv=base64.b64decode(message.get('data'))
-			if self.iv != '':
-				ret = True
-			else:
-				ret= False
-		elif mtype == 'OPEN':
-			ret = self.process_open(message)
-		elif mtype == 'DATA':
-			ret = self.process_data(message)
-		elif mtype == 'CLOSE':
-			ret = self.process_close(message)
-			logger.info("Decrypt file")
-			self.decryptFile()
-		else:
-			logger.warning("Invalid message type: {}".format(message['type']))
+                try:
+                    message = json.loads(frame)
+                except:
+                    logger.exception("Could not decode JSON message: {}".format(frame))
+                    self.transport.close()
+                    return
+                mtype = message.get('type').upper()
+                if mtype == 'HEY':
+                    self.text_to_sign = message.get('data')
+                    self.server_cert = base64.b16encode(self.getCert()).decode()
+                    print(self.server_cert)
+                    self._send({'type','CERT_SERVER', 'data', self.server_cert })
+                    self.server_signature = base64.b64encode(self.getSignature()).decode()
+                    self._send({'type','SIGN_SERVER', 'data', self.server_signature })
+                elif mtype == 'SERVER_OK':
+                    self.client_text = message.get('data')
+                elif mtype == 'SERVER_OK':
+                    self.client_text = base64.b64decode(message.get('data')).encode()
+                elif mtype == 'CERT_CLIENT':
+                    self.client_cert = base64.b64decode(message.get('data')).encode()
+                elif mtype == 'SIGN_CLIENT':
+                    self.sign_client = message.get('data')
+                    if not self.verifyClient():
+                        return
+                    self._send({'type','START_LOGIN'})
+                elif mtype == 'USER':
+                    uname = message.get('uname')
+                    A = base64.b64decode(message.get('A')).encode()
+                    password = self.getPassword(uname)
+                    salt, vkey = srp.create_salted_verification_key( uname, password )
+                    self.svr = srp.Verifier( uname, salt, vkey, A)
+                    s,B = self.svr.get_challenge()
+                    self._send({'type','s', 'data', base64.b64encode(s).decode() })
+                    self._send({'type','B', 'data', base64.b64encode(B).decode() })
+                elif mtype == 'M':
+                    M = base64.b64decode(message.get('data')).encode()
+                    HAMK = self.svr.verify_session(M)
+                    if HAMK:
+                        self._send({'type': 'OKOK'}
+                
+                elif mtype == 'HELLO':
+                    self.algorithms = message.get('data').split('_')
+                    
+                    if self.algorithms:
+                        self.keyPair()
+                        logger.info("Send public Key")
+                        self._send({'type': 'PUBLIC_KEY', 'data': base64.b64encode(self.pem_public_key).decode()})
+                        ret = True
+                    else:
+                        ret = False
+                
+                elif mtype == 'SECURE':
+		    self.encriptkey = base64.b64decode(message.get('data'))
+		    if self.encriptkey != '':
+		        logger.info("Key")
+			self.getKey()
+			ret = True
+		    else:
 			ret = False
+                elif mtype == 'SECURE_IV':
+		    logger.info("iv")
+		    self.iv=base64.b64decode(message.get('data'))
+		    if self.iv != '':
+			ret = True
+		    else:
+			ret= False
+	        elif mtype == 'OPEN':
+		    ret = self.process_open(message)
+	        elif mtype == 'DATA':
+		    ret = self.process_data(message)
+	        elif mtype == 'CLOSE':
+		    ret = self.process_close(message)
+		    logger.info("Decrypt file")
+		    self.decryptFile()
+	        else:
+		    logger.warning("Invalid message type: {}".format(message['type']))
+		    ret = False
 
-		if not ret:
-			try:
-				self._send({'type': 'ERROR', 'message': 'See server'})
-			except:
-				pass # Silently ignore
-
-			logger.info("Closing transport")
-			if self.file is not None:
-				self.file.close()
-				self.file = None
-
-			self.state = STATE_CLOSE
-			self.transport.close()
+	        if not ret:
+		    try:
+			self._send({'type': 'ERROR', 'message': 'See server'})
+		    except:
+		        pass # Silently ignore
+	            logger.info("Closing transport")
+        	    if self.file is not None:
+			self.file.close()
+			self.file = None
+		    self.state = STATE_CLOSE
+		    self.transport.close()
 
 
 	def process_open(self, message: str) -> bool:
