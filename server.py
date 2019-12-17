@@ -2,6 +2,7 @@ import asyncio
 import json
 import argparse
 import coloredlogs, logging
+import self as self
 from aio_tcpserver import tcp_server
 import os
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
@@ -47,10 +48,14 @@ class ClientHandler(asyncio.Protocol):
 		self.key=''
 		self.iv = ''
 		self.file_name_decrypt = 'serverFiles/fileBonito.txt'
-                self.server_cert = ''
-                self.server_signature = ''
-                self.server_privarte_key_cert = ''
-                self.text_to_sign = ''
+        self.server_cert = ''
+        self.server_signature = ''
+        self.server_privarte_key_cert = ''
+        self.text_to_sign = ''
+		self.client_text = ''
+		self.client_cert = ''
+		self.sign_client = ''
+		self.srv =''
 
 	def connection_made(self, transport) -> None:
 		"""
@@ -111,14 +116,40 @@ class ClientHandler(asyncio.Protocol):
 			return
 
 		mtype = message.get('type', "").upper()
-                if mtype == 'HEY':
-                    self.text_to_sign = massage.get('data')
-                    self.server_cert = self.getCert()
-                    print(self.server_cert)
-                    self._send({'type','CERT_SERVER', 'data', self.server_cert })
-                    self.server_signature = getSignature()
-                    self._send({'type','SIGN_SERVER', 'data', self.server_signature })
-                elif mtype == 'HELLO':
+        if mtype == 'HEY':
+                self.text_to_sign = message.get('data')
+                self.server_cert = base64.b16encode(self.getCert()).decode()
+                print(self.server_cert)
+                self._send({'type','CERT_SERVER', 'data', self.server_cert })
+                self.server_signature = base64.b64encode(self.getSignature()).decode()
+                self._send({'type','SIGN_SERVER', 'data', self.server_signature })
+		elif mtype == 'SERVER_OK'
+				self.client_text = message.get('data')
+		elif mtype == 'SERVER_OK':
+				self.client_text = base64.b64decode(message.get('data')).encode()
+		elif mtype == 'CERT_CLIENT':
+				self.client_cert = base64.b64decode(message.get('data')).encode()
+		elif mtype == 'SIGN_CLIENT':
+				self.sign_client = message.get('data')
+				if not self.verifyClient():
+					return
+				self._send({'type','START_LOGIN'})
+		elif mtype == 'USER':
+			uname = message.get('uname')
+			A = base64.b64decode(message.get('A')).encode()
+			password = self.getPassword(uname)
+			salt, vkey = srp.create_salted_verification_key( uname, password )
+			self.svr = srp.Verifier( uname, salt, vkey, A)
+			s,B = self.svr.get_challenge()
+			self._send({'type','s', 'data', base64.b64encode(s).decode() })
+			self._send({'type','B', 'data', base64.b64encode(B).decode() })
+		elif mtype == 'M'
+			M = base64.b64decode(message.get('data')).encode()
+			HAMK = self.svr.verify_session(M)
+			if HAMK:
+				self._send({'type': 'OKOK'})
+
+        elif mtype == 'HELLO':
 			self.algorithms = message.get('data').split('_')
 			if self.algorithms:
 				self.keyPair()
@@ -127,6 +158,7 @@ class ClientHandler(asyncio.Protocol):
 				ret = True
 			else:
 				ret = False
+
 		elif mtype == 'SECURE':
 			self.encriptkey = base64.b64decode(message.get('data'))
 			if self.encriptkey != '':
@@ -355,7 +387,7 @@ class ClientHandler(asyncio.Protocol):
 		with open(self.file_name_decrypt,'w') as file:
 			file.write(end.decode())
 
-    def getCert()
+    def getCert(self):
         self.server_privarte_key_cert = rsa.generate_private_key(public_exponent=65537,key_size=2048,backend=default_backend())
 
         subject = issuer = x509.Name([
@@ -371,7 +403,7 @@ class ClientHandler(asyncio.Protocol):
                 ).issuer_name(
                         issuer
                         ).public_key(
-                                key.public_key()
+                                self.server_privarte_key_cert.public_key()
                                 ).serial_number(x509.random_serial_number()
                                         ).not_valid_before(
                                                 datetime.datetime.utcnow()
@@ -379,13 +411,12 @@ class ClientHandler(asyncio.Protocol):
                                                         datetime.datetime.utcnow() + datetime.timedelta(days=10)
                                                         ).add_extension(
                                                                 x509.SubjectAlternativeName([x509.DNSName(u"localhost")]),critical=False,
-                                                                ).sign(key, hashes.SHA256(), default_backend())
+                                                                ).sign(self.server_privarte_key_cert, hashes.SHA256(), default_backend())
 
-        return cert
+        return self.server_cert
 
     
-    def getSignature():
-        message = b"A message I want to sign"
+    def getSignature(self):
         signature = self.server_private_key_cert.sign(
                 self.text_to_sign,
                 padding.PSS(
@@ -398,11 +429,22 @@ class ClientHandler(asyncio.Protocol):
 
 
 
+	def verifyClient(self):
+		public_key = self.client_cert.public_key()
+		v = public_key.verify(self.sign_client,self.clint_text , padding.PKCS1v15(), hashes.SHA1())
+		if v == None:
+			return True
+		else:
+			return False
 
-
-
-
-
+	def getPassword(self,uname):
+		filepath = 'login.txt'
+		with open(filepath) as fp:
+			for line in fp:
+				l = line.split()
+				if l[0] == uname:
+					return l[1]
+		return None
 def main():
 	global storage_dir
 

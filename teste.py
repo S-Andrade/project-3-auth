@@ -1,9 +1,10 @@
 import srp
+import csv
 
 #client
 usr= srp.User( 'testuser', 'testpassword' )
 uname, A = usr.start_authentication()
-
+print(A)
 #client -> Server : username,A
 
 #server
@@ -23,9 +24,20 @@ M = usr.process_challenge(s, B)
 HAMK = svr.verify_session(M)
 print(HAMK)
 
-#server -> client : HAMK
-usr.verify_session(HAMK)
 
 
-print(usr.authenticated())
 print(svr.authenticated())
+
+
+def getPassword(uname):
+    filepath = 'login.txt'
+    with open(filepath) as fp:
+        for line in fp:
+            l = line.split()
+            if l[0] == uname:
+                return l[1]
+    return None
+
+
+p = getPassword('testuser')
+print(p)

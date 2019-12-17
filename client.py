@@ -49,6 +49,12 @@ class ClientProtocol(asyncio.Protocol):
         self.cert_server=''
         self.sign_server=''
         self.text_server = ''
+        self.text_to_sign = ''
+        self.cert_client = ''
+        self.sign_client = ''
+        self.s =''
+        self.B = ''
+        self.usr =''
 
     def connection_made(self, transport) -> None:
         """
@@ -60,13 +66,10 @@ class ClientProtocol(asyncio.Protocol):
         self.transport = transport
 
         logger.debug('Connected to Server')
-        self._send({'type': 'HEY', 'data': b"prova que és o servidor"})
+        self.text_server = b"prova que és o servidor"
+        self._send({'type': 'HEY', 'data': self.text_server})
         
-        #input = 'Salsa20_SHA256'
-        #self.algorithms = input.split('_')
-        #message = {'type': 'HELLO', 'data': input }
-        #logger.info("Hello")
-        #self._send(message)
+
 
         #message = {'type': 'OPEN', 'file_name': self.file_name}
         #self._send(message)
@@ -120,10 +123,36 @@ class ClientProtocol(asyncio.Protocol):
 
         mtype = message.get('type', None)
         if mtype == 'CERT_SERVER':
-            self.cert_server = mesage.get('data')
-         if mtype == 'SIGN_SERVER':
-            self.sign_server = mesage.get('data')
-            self.verifyServer()
+            self.cert_server = base64.b64decode(message.get('data')).encode()
+        if mtype == 'SIGN_SERVER':
+            self.sign_server = base64.b64decode(message.get('data')).encode()
+            if not self.verifyServer():
+                return
+            self.text_to_sign = b"eu sou quem digo ser"
+            self._send({'type': 'SERVER_OK', 'data': self.text_to_sign})
+            self.getCC()
+            self._send({'type': 'CERT_CLIENT', 'data': base64.b16encode(self.cert_client).decode()})
+            self._send({'type': 'SIGN_CLIENT', 'data': base64.b16encode(self.sign_client).decode()})
+
+        if mtype == 'START_LOGIN':
+            self.usr = srp.User('testuser', 'testpassword')
+            uname, A = self.usr.start_authentication()
+            self._send({'type': 'USER', 'uname' : uname, base64.b16encode(A).decode()})
+
+        if mtype =='s':
+            self.s = base64.b64decode(message.get('data')).encode()
+        if mtype =='B':
+            self.B = base64.b64decode(message.get('data')).encode()
+            M = self.usr.process_challenge(self.s, self.B)
+            self._send({'type', 'M', 'data', base64.b64encode(M).decode()})
+
+        if mtype == 'OKOK':
+            input = 'Salsa20_SHA256'
+            self.algorithms = input.split('_')
+            message = {'type': 'HELLO', 'data': input }
+            logger.info("Hello")
+            self._send(message)
+
         if mtype == 'PUBLIC_KEY':
             pem_public_key = base64.b64decode(message.get('data'))
             self.server_public_key = serialization.load_pem_public_key(
@@ -273,13 +302,46 @@ class ClientProtocol(asyncio.Protocol):
         with open(self.file_name_encrypted, 'wb') as file:
             file.write(end)
 
-    def verifyServer():
+    def verifyServer(self):
         public_key = self.cert_server.public_key()
         v = public_key.verify(self.sign_server,self.text_server,padding.PSS(mgf=padding.MGF1(hashes.SHA256()),salt_length=padding.PSS.MAX_LENGTH),hashes.SHA256())
         if v == None:
             return True
         else:
             return False
+
+    def getCC(self):
+        lib = '/usr/local/lib/libpteidpkcs11.so'
+        pkcs11 = PyKCS11.PyKCS11Lib()
+        pkcs11.load(lib)
+        slots = pkcs11.getSlotList()
+
+        certificate = None
+        for slot in slots:
+            # print(pkcs11.getTokenInfo(slot))
+            all_attr = list(PyKCS11.CKA.keys())
+            # Filter attributes
+            all_attr = [e for e in all_attr if isinstance(e, int)]
+            # print(all_attr)
+            session = pkcs11.openSession(slot)
+            for obj in session.findObjects():
+                # Get object attributes
+                attr = session.getAttributeValue(obj, all_attr)
+                # Create dictionary with attributes
+                attr = dict(zip(map(PyKCS11.CKA.get, all_attr), attr))
+                print('Label:', str(attr['CKA_LABEL']))
+                if str(attr['CKA_LABEL']) == "b'CITIZEN AUTHENTICATION CERTIFICATE'":
+                    try:
+                        self.cert_client = x509.load_der_x509_certificate(bytes(attr['CKA_VALUE']), default_backend())
+                    except:
+                        print("Something else went wrong")
+
+            private_key = session.findObjects(
+                [(PyKCS11.CKA_CLASS, PyKCS11.CKO_PRIVATE_KEY), (PyKCS11.CKA_LABEL, 'CITIZEN AUTHENTICATION KEY')])[0]
+            mechanism = PyKCS11.Mechanism(PyKCS11.CKM_SHA1_RSA_PKCS, None)
+            text = b'text to sign'
+            self.sign_client = bytes(session.sign(private_key, self.text_to_sign, mechanism))
+
 def main():
     parser = argparse.ArgumentParser(description='Sends files to servers.')
     parser.add_argument('-v', action='count', dest='verbose',
